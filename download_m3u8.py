@@ -14,10 +14,10 @@ class Monitor(object):
         # browsermob-proxy的存放路径，请自行下载并替换路径
         # 下载地址：https://github.com/lightbody/browsermob-proxy
         self.proxy_path = config.get('proxy_path',
-                                     'E:\\dev\\software\\webdriver\\browsermob-proxy-2.1.4\\bin\\browsermob-proxy.bat')
+                                     'E:/dev/software/webdriver/browsermob-proxy-2.1.4/bin/browsermob-proxy.bat')
         # chromedriver的存放路径，请自行下载与当前chrome浏览器版本对应的版本，并替换路径
         # 下载地址：http://npm.taobao.org/mirrors/chromedriver
-        self.driver_path = config.get('driver_path', 'E:\\dev\\software\\webdriver\\chromedriver.exe')
+        self.driver_path = config.get('driver_path', 'E:/dev/software/webdriver/chromedriver.exe')
         self.driver_prefs = config.get('driver_prefs', {})
         self.driver_argument = config.get('driver_argument', [])
         # 启动
@@ -90,7 +90,7 @@ def get_show_page(url):
     :return:
     """
     response = requests.get(url, headers={
-        "user-agent": 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36 Edg/90.0.818.51'})
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36 Edg/90.0.818.51'})
     response.encoding = 'utf-8'
     return response.text
 
@@ -139,14 +139,14 @@ def get_m3u8_url(playes):
         time.sleep(1)
         logs = monitor.get_log_entries()
         for log in logs:
-            # print(log["request"]["url"])
-            if re.match(r'.+m3u8$', log["request"]["url"]):
-                url_list[k] = log["request"]["url"]
+            # print(log['request']['url'])
+            if re.match(r'.+m3u8$', log['request']['url']):
+                url_list[k] = log['request']['url']
 
     return url_list
 
 
-def download_video(url_list):
+def download_video(url_list, config):
     """
     借助N_m3u8DL-CLI下载m3u8资源，并最终合成视频
     :param url_list:
@@ -160,7 +160,7 @@ def download_video(url_list):
                 file.write(f'timeout /t 2')
                 file.write('\n')
             file.write(
-                f'''start cmd /k""E:/Program Files (x86)/N_m3u8DL/N_m3u8DL-CLI_v2.9.7.exe" "{v}" --enableDelAfterDone --workDir "D:/111222/{k.split('-')[0]}" --saveName "{k}""\n''')
+                f'''start cmd /k""{config['m3u8dl_path']}" "{v}" --enableDelAfterDone --workDir "{config['work_path']}/{k.split('-')[0]}" --saveName "{k}""\n''')
             index += 1
         file.close()
     # 执行批处理文件 download_video.bat
@@ -187,12 +187,12 @@ if __name__ == '__main__':
         monitor = Monitor({
             # browsermob-proxy的存放路径，请自行下载并替换路径
             # 下载地址：https://github.com/lightbody/browsermob-proxy
-            "proxy_path": "",
+            # 'proxy_path': '',
             # chromedriver的存放路径，请自行下载与当前chrome浏览器版本对应的版本，并替换路径
             # 下载地址：http://npm.taobao.org/mirrors/chromedriver
-            "driver_path": "",
+            # 'driver_path': '',
             # chromedriver相关配置
-            "driver_argument": [
+            'driver_argument': [
                 "user-agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36 Edg/90.0.818.51'",
                 "--disable-blink-features=AutomationControlled",
                 "--headless",
@@ -214,6 +214,7 @@ if __name__ == '__main__':
 
     if m3u8_list:
         print('开始下载')
-        download_video(m3u8_list)
+        download_video(m3u8_list, {'m3u8dl_path': 'E:/Program Files (x86)/N_m3u8DL/N_m3u8DL-CLI_v2.9.7.exe',
+                                   'work_path': 'D:/111222'})
     else:
         print('爬取失败')
