@@ -93,10 +93,11 @@ init
     'compared': '被对照文名'
 }
 
-google_translate(self, text, dest='en')
+google_translate(self, text, dest='en', src='auto')
 获取翻译文本
 :param text: 需要翻译的文本
-:param dest: 翻译语言
+:param dest: 目标语言
+:param src: 源始语言
 :return:
 
 translate(self, locales=None)
@@ -124,12 +125,11 @@ convert_to_add_params(data)
 :param data:
 :return:
 
-flatten(structure, key='', path='', flattened=None)
-扁平化字典
-:param structure:
+flatten(data, key='', path='')
+字典扁平化
+:param data:
 :param key:
 :param path:
-:param flattened:
 :return:
 
 get_add_table(data)
@@ -138,7 +138,8 @@ get_add_table(data)
 :return:
 
 get_differ_dict(dict1, dict2)
-获取字典差异键值对
+获取字典差异项
+获取的是在dict1中，但不在dict2中的项
 :param dict1:
 :param dict2:
 :return:
@@ -165,7 +166,7 @@ get_edit_table(data=None)
 }
 :return:
 
-get_file(path, mode='r+', encoding='utf-8')
+open_file(path, mode='r+', encoding='utf-8')
 获取文件内容，如文件名后缀为json，则以json格式返回
 :param path:
 :param mode:
@@ -194,6 +195,11 @@ get_values_list(data)
 :return:
 
 re_search(key_str, search_str)
+
+reverse_flatten(data)
+字典反扁平化
+:param data:
+:return:
 
 save_edit_to_file(path, edit_data, local_list)
 保存修改翻译数据到 edit.json 文件

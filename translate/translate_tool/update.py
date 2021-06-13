@@ -88,7 +88,7 @@ class Update:
         """
         cookie_dict = {}
         try:
-            origin_cookies_file = get_file('./cookies.json')
+            origin_cookies_file = open_file('./cookies.json')
             if origin_cookies:
                 # 从 origin_cookies 字符串获取
                 cookie_dict = dict([cookie.split('=', 1) for cookie in origin_cookies.split('; ')])

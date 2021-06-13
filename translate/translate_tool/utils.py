@@ -99,7 +99,7 @@ def save_file(content, path, mode='w', encoding='utf-8'):
         logger(msg=f'Failed in [ save_file ]: {e}', level=logging.ERROR)
 
 
-def get_file(path, mode='r+', encoding='utf-8'):
+def open_file(path, mode='r+', encoding='utf-8'):
     """
     获取文件内容，如文件名后缀为json，则以json格式返回
     :param path:
@@ -123,53 +123,85 @@ def get_file(path, mode='r+', encoding='utf-8'):
             file.close()
             return result
     except Exception as e:
-        logger(msg=f'Failed in [ get_file ]: {e}', level=logging.ERROR)
+        logger(msg=f'Failed in [ open_file ]: {e}', level=logging.ERROR)
         return result
 
 
-def flatten(structure, key='', path='', flattened=None):
+def flatten(data, key=''):
     """
-    扁平化字典
-    :param structure:
+    字典扁平化
+    :param data:
     :param key:
     :param path:
-    :param flattened:
     :return:
     """
 
-    def get_new_path(temp_path):
-        return f'{temp_path}|' if temp_path else ''
+    def get_new_path(key_path):
+        temp_path = list(filter(lambda x: True if x else False, key_path))
+        return '|'.join(temp_path) if len(temp_path) > 0 else ''
 
-    if flattened is None:
-        flattened = {}
-    if type(structure) not in (dict, list):
-        flattened[get_new_path(path) + key] = structure
-    elif isinstance(structure, list):
-        for i, item in enumerate(structure):
-            flatten(item, str(i), get_new_path(path) + key, flattened)
+    result = {}
+
+    if type(data) is not dict:
+        result[key] = data
+    # elif isinstance(data, list):
+    #     for i, item in enumerate(data):
+    #         flatten(item, str(i), get_new_path(path) + key)
     else:
-        for new_key, value in structure.items():
-            flatten(value, new_key, get_new_path(path) + key, flattened)
-    return flattened
+        for new_key, value in data.items():
+            result = {**result, **flatten(value, get_new_path([key, new_key]))}
+
+    return result
+
+
+def reverse_flatten(data):
+    """
+    字典反扁平化
+    :param data:
+    :return:
+    """
+    try:
+        result = {}
+        for k, v in data.items():
+            # 使用 reduce 将 键名列表（k.split('|')）处理成嵌套字典
+            # 再使用 recursive_update 合并嵌套字典，避免某些字段被覆盖
+            result = recursive_update(result, reduce(lambda x, y: {y: x}, reversed(k.split('|')), v))
+        return result
+    except Exception as e:
+        logger(msg=e, level=logging.ERROR)
+        return {}
 
 
 def get_differ_dict(dict1, dict2):
     """
-    获取字典差异键值对
+    获取字典差异项
+    获取的是在dict1中，但不在dict2中的项
     :param dict1:
     :param dict2:
     :return:
     """
     try:
-        result = {}
-        # 获取非重复键值对
-        data = dict(set(dict1.items()) - set(dict2.items()))
-        for k, v in data.items():
-            # 使用 reduce 将 键名列表（k.split('|')）处理成嵌套字典
-            # 再使用 recursive_update 合并嵌套字典，避免某些字段被覆盖
-            result = recursive_update(result, reduce(lambda x, y: {y: x}, reversed(k.split('|')), v))
+        flatten_dict1 = flatten(dict1)
+        flatten_dict2 = flatten(dict2)
 
-        return result
+        """
+        set(dict1.items()) - set(dict2.items())
+        得到的是对比dict1与dict2的key或value不一致的结果
+        即dict的key或value其中一个不相等，也符合差异的结果
+        因此需要转换为value一样的dict再去比较
+        """
+        # 将dict的value全部转换为'same_value'
+        same_value_dict1 = reduce(lambda x, y: {**x, y: 'same_value'}, flatten_dict1.keys(), {})
+        same_value_dict2 = reduce(lambda x, y: {**x, y: 'same_value'}, flatten_dict2.keys(), {})
+
+        # 获取非重复键值对
+        data = dict(set(same_value_dict1.items()) - set(same_value_dict2.items()))
+
+        # 转换回原来的value
+        for k, v in data.items():
+            data[k] = flatten_dict1[k]
+
+        return reverse_flatten(data)
     except Exception as e:
         logger(msg=e, level=logging.ERROR)
         return {}
@@ -184,7 +216,7 @@ def save_edit_to_file(path, edit_data, local_list):
     :return:
     """
     try:
-        edit_file = get_file(path)
+        edit_file = open_file(path)
         category = edit_data.get('category')
         group = edit_data.get('group')
         key = edit_data.get('key')
@@ -375,8 +407,8 @@ def translate_use_time(func):
         start = time.time()
         logger(msg=f'正在翻译，请稍候...', level=logging.INFO)
         result = func(*args, **kw)
-        time.sleep(0)
         logger(msg=f'翻译完成，总用时（秒）：{time.time() - start}', level=logging.INFO)
+        time.sleep(0)
         return result
 
     return wrapper
