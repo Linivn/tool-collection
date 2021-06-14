@@ -167,7 +167,7 @@ def download_video(url_list, config):
 if __name__ == '__main__':
     """
     Selenium + Browsermob-Proxy获取浏览器Network请求和响应，从而获取得到m3u8链接
-    需要先安装依赖：requests、browsermobproxy、selenium
+    需要先安装依赖：requests、browsermob-proxy、selenium
     """
     # xpath => video_title：剧集名称、episode_title：集数名称、play：播放列表
     # 获取播放链接
