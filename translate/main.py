@@ -20,6 +20,7 @@ def init_configure(new_configure):
 
     base_configure = {
         'translate': {  # 翻译工具配置项
+            # 'service_urls': ['translate.google.cn'],  # googletrans service_urls 如有科学上网可以不用配置
             'path': '',  # 翻译文件所在文件目录
             'languages': translate_languages,  # 支持翻译语言
             # 对照 仅翻译新增的文本

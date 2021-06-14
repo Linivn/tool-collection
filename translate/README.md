@@ -38,6 +38,7 @@ pip install -r requirements.txt
 # 运行前需要先进行相关配置
 configure = {
     'translate': {  # 翻译工具配置项
+        'service_urls': ['translate.google.cn'],  # googletrans service_urls 如有科学上网可以不用配置
         'path': '',  # 翻译文件所在文件目录
         'languages': {  # 需要翻译什么语言，放开注释即可
             'en': 'en_us',
@@ -86,6 +87,7 @@ python mian.py
 __init__(self, config)
 init
 :param config: {
+    'service_urls': googletrans service_urls
     'path': 翻译文件初始位置,
     'languages': 支持翻译语言,
     # 对照 仅翻译新增的文本

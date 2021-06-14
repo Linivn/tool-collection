@@ -12,6 +12,7 @@ class Translate:
         """
         init
         :param config: {
+            'service_urls': googletrans service_urls
             'path': 翻译文件初始位置,
             'languages': 支持翻译语言,
             # 对照 仅翻译新增的文本
@@ -19,7 +20,7 @@ class Translate:
             'compared': '被对照文名'
         }
         """
-        self.__trans = Translator()
+        self.__trans = Translator(service_urls=config.get('service_urls', ['translate.google.com']))
         self.path = config.get('path', './')
         self.languages = config.get('languages', {'en': 'en_us', 'zh-cn': 'zh_cns'})
         self.contrast = config.get('contrast', 'add.json')
