@@ -45,7 +45,7 @@ pip install -r requirements.txt
   }
   ```
 
-    - main_command-line.py
+    - main_gooey_gui.py.py
   ```python
   # 在项目根目录创建 config.json 文件，用来配置代理、谷歌翻译源
   {
