@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 __all__ = ['Translate', 'Update', 'utils']
 __version__ = '1.0.0'
 

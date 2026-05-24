@@ -1,7 +1,22 @@
-# coding:utf-8
+# -*- coding: utf-8 -*-
+import json
+import time
+
 import requests
 from selenium import webdriver
-from translate_tool.utils import *
+
+from translate_tool.utils import check_json, logger, logging, save_edit_to_file
+
+
+def block_logout(func):
+    def wrapper(*args, **kw):
+        login_result = Update.check_login(args[0])
+        if login_result:
+            return func(*args, **kw)
+        else:
+            return {'code': 403, 'msg': '请先登录'}
+
+    return wrapper
 
 
 class Update:
@@ -12,14 +27,15 @@ class Update:
             'account_data': office365账户(用于模拟手动登录),
             'executable_path': chromedriver 文件路径,
             'cookies': cookie,
-            'base_url': mts url,
+            'base_url': main url,
             'selenium_login': 是否使用模拟登录
         }
         """
+        self.user_info = {}
         self.account_data = config.get('account_data', {})
         self.executable_path = config.get('executable_path', './software/chromedriver_win32/chromedriver.exe')
         self.cookies = config.get('cookies', '')
-        self.base_url = config.get('base_url', '')
+        self.base_url = config.get('base_url', '').rstrip('/')  # 删除域名最后的斜杠
         self.selenium_login = config.get('selenium_login', False)  # 是否使用模拟登录
         self.is_login = False
         self.request = requests.session()
@@ -54,13 +70,6 @@ class Update:
         request = request_methods[options.get('method', 'GET')]
 
         try:
-            white_url = ['/index/user_info', '/static/config/category-default.json', '/index/logout']
-            if not self.is_login and options['url'] not in white_url:
-                return {
-                    'code': 403,
-                    'msg': '请先登录',
-                    'data': ''
-                }
             res = request(self.__get_full_url(options['url']), params=options.get('params', ''),
                           data=options.get('data', ''))
             if res.status_code == 200:
@@ -88,13 +97,13 @@ class Update:
         """
         cookie_dict = {}
         try:
-            origin_cookies_file = open_file('./cookies.json')
+            # origin_cookies_file = open_file('./cookies.json')
             if origin_cookies:
                 # 从 origin_cookies 字符串获取
                 cookie_dict = dict([cookie.split('=', 1) for cookie in origin_cookies.split('; ')])
-            elif origin_cookies_file:
-                # 从 已保存的文件中获取
-                cookie_dict = origin_cookies_file
+            # elif origin_cookies_file:
+            #     # 从 已保存的文件中获取
+            #     cookie_dict = origin_cookies_file
 
             # 检查cookies是否过期
             self.request.cookies.update(cookie_dict)
@@ -102,16 +111,17 @@ class Update:
 
             # 用户未登录或登录失效
             if not self.is_login:
-                if self.selenium_login:
-                    logger(msg='账户未登录或登录失效，即将进行模拟登录，请在控制台输入相应的登录信息', level=logging.INFO)
-                    # 模拟登录
-                    cookie_dict = self.user_login()
-                else:
-                    logger(msg='模拟登录已关闭，请配置 cookies 进行登录', level=logging.INFO)
+                # if self.selenium_login:
+                #     logger(msg='账户未登录或登录失效，即将进行模拟登录，请在控制台输入相应的登录信息', level=logging.INFO)
+                #     # 模拟登录
+                #     cookie_dict = self.user_login()
+                # else:
+                #     logger(msg='模拟登录已关闭，请配置 cookies 进行登录', level=logging.INFO)
+                logger(msg='账户未登录或登录失效，请重新配置 cookies 进行登录', level=logging.INFO)
 
-            if json.dumps(origin_cookies_file) != json.dumps(cookie_dict) and self.is_login:
-                # 保存cookies，便于下次登录
-                save_file(cookie_dict, path='./cookies.json')
+            # if json.dumps(origin_cookies_file) != json.dumps(cookie_dict) and self.is_login:
+            #     # 保存cookies，便于下次登录
+            #     save_file(cookie_dict, path='./cookies.json')
 
             return cookie_dict
         except Exception as e:
@@ -134,7 +144,7 @@ class Update:
         driver.find_element_by_id('submit-sso-login').click()
         time.sleep(3)
         input_account = self.account_data['account'] if self.account_data['account'] else input(
-            '请输入账户（offic365邮箱）：\n')
+            '请输入账户（office365邮箱）：\n')
         driver.find_element_by_name('loginfmt').send_keys(input_account)
         driver.find_element_by_xpath('''//input[@value='下一步']''').click()
         # driver.find_element_by_id('i0116').send_keys(input_account)
@@ -166,7 +176,7 @@ class Update:
         return cookie_dict
 
     def user_logout(self):
-        return self.__request({'method': 'GET', 'url': '/index/logout'})
+        return self.__request({'method': 'GET', 'url': '/link'})
 
     def check_login(self):
         """
@@ -174,6 +184,8 @@ class Update:
         :return:
         """
         try:
+            if not self.user_info:
+                self.user_info = self.get_user_info()
             result = self.user_info
             if result['data'] and result['data']['email']:
                 return True
@@ -185,25 +197,45 @@ class Update:
             logger(msg=f'Failed in [ check_login ]: {e}', level=logging.ERROR)
             return False
 
-    @property
-    def user_info(self):
+    def get_user_info(self):
         """
-        获取用户信息
+        获取登录信息
         :return:
         非登录状态 返回结果为
         { 'code': 0, 'data': {} }
         登录状态 返回结果为
         { 'code': 0, 'data': {“email”: “登录邮箱”, ...} }
         """
-        return self.__request({'method': 'GET', 'url': '/index/user_info'})
+        return self.__request({'method': 'GET', 'url': '/link'})
 
-    @property
-    def category_list(self):
-        return self.__request({'method': 'GET', 'url': '/static/config/category-default.json'})
+    def google_trans(self, query='', to_lang='zh-cn'):
+        """
+        main 翻译
+        :param query:
+        :param to_lang:
+        :return:
+        """
+        try:
+            data = {'query': query, 'to_lang': to_lang}
 
-    def search(self, param):
+            result = ''
+            res = self.__request({'method': 'POST', 'url': '/link', 'data': json.dumps(data)})
+
+            if res.get('code') == 0:
+                data = res.get('data', {})
+                translations = data.get('translations', [{}])
+                result = translations[0].get('translatedText')
+
+            return result
+        except Exception as e:
+            logger(msg=f'Failed in [ google_trans ]: {e}', level=logging.ERROR)
+            return ''
+
+    @block_logout
+    def search(self, param, is_search=False):
         """
         搜索翻译
+        :param is_search: 是否来自查询 是则会处理请求结果后返回，否则直接返回请求结果
         :param param: {
             'search_mode': 搜索类型 key、value,
             'search': 搜索关键字,
@@ -216,6 +248,8 @@ class Update:
         }
         :return:
         """
+        if not param:
+            return None
         params = {
             'search_mode': param.get('search_mode', 'key'),
             'search': param.get('search', ''),
@@ -227,11 +261,34 @@ class Update:
             'group_by': param.get('group_by', '1')
         }
 
-        return self.__request({'method': 'GET', 'url': '/lang/', 'params': params})
+        result = {
+            'total': 0,
+            'list': {}
+        }
 
-    def get_detail(self, param):
+        res = self.__request({'method': 'GET', 'url': '/link', 'params': params})
+
+        if not is_search:
+            return res
+
+        if res['code'] == 0 and res['data'] and res['data']['list']:
+            data_list = res['data']['list']
+            result['total'] = res['data']['totalCounts']
+            for item in data_list:
+                result['list'][item['hash_key']] = item['count']
+
+        return result
+
+    @property
+    @block_logout
+    def category_list(self):
+        return self.__request({'method': 'GET', 'url': '/static/config/category-default.json'})
+
+    @block_logout
+    def get_detail(self, param, is_search=False):
         """
         获取翻译详情
+        :param is_search: 是否来自查询 是则会处理请求结果后返回，否则直接返回请求结果
         :param param: {
             'hash_key': hash_key,
             'page': 页数,
@@ -247,8 +304,29 @@ class Update:
             'creation_mode': param.get('creation_mode', '0')
         }
 
-        return self.__request({'method': 'GET', 'url': '/lang/', 'params': params})
+        result = {}
+        res = self.__request({'method': 'GET', 'url': '/link', 'params': params})
 
+        if not is_search:
+            return res
+
+        if res['code'] == 0 and res['data'] and res['data']['list']:
+            temp = {
+                'key': '',
+                'locales': {}
+            }
+            data_list = res['data']['list']
+            temp['key'] = '.'.join([data_list[0]['group'], data_list[0]['key']])
+
+            for item in data_list:
+                if item['value']:
+                    temp['locales'][item['locales']] = item['value']
+
+            result[param['hash_key']] = temp
+
+        return result
+
+    @block_logout
     def add(self, data):
         """
         新增翻译
@@ -266,8 +344,9 @@ class Update:
         # 将 None 替换为 null
         data = json.dumps(data).replace('None', 'null')
 
-        return self.__request({'method': 'PUT', 'url': '/lang/', 'params': params, 'data': data})
+        return self.__request({'method': 'PUT', 'url': '/link', 'params': params, 'data': data})
 
+    @block_logout
     def multi_add(self, multi_data):
         """
         新增多个翻译
@@ -285,30 +364,28 @@ class Update:
         multi_data_keys = multi_data.keys()
         for key in multi_data_keys:
             temp = {}
-            data = multi_data[key]
-            search_param = {
-                'category': data[0].get('category'),
-                'group': data[0].get('group'),
-                'search': key
-            }
+            data = multi_data.get(key)
+            category = data[0].get('category')
+            group = data[0].get('group')
 
-            search_result = self.search(search_param)
+            hash_key = f'{category}_{group}_{key}'.lower()
+            search_result = self.get_detail({'hash_key': hash_key})
             result_data = search_result['data']
-            if search_result['code'] == 0 and (
-                    len(result_data['list']) == 0 or not next(check_exist(result_data['list'], key))):
+            if search_result['code'] == 0 and result_data.get('totalCounts') == 0:
                 add_result = self.add(data)
                 if add_result.get('code') == 0:
-                    temp[key] = '添加成功'
+                    temp[hash_key] = '添加成功'
                     results['success'].append(temp)
                 else:
-                    temp[key] = add_result
+                    temp[hash_key] = add_result
                     results['failure'].append(temp)
             else:
-                temp[key] = '已存在，添加失败'
+                temp[hash_key] = '已存在，添加失败'
                 results['failure'].append(temp)
 
         return results
 
+    @block_logout
     def edit(self, data, path=None):
         """
         修改翻译
@@ -334,7 +411,8 @@ class Update:
         if not category or not group or not key:
             return None
 
-        detail = self.get_detail({'hash_key': '_'.join([category, group, key])})
+        hash_key = f'{category}_{group}_{key}'.lower()
+        detail = self.get_detail({'hash_key': hash_key})
 
         params = {
             'creation_mode': '0'
@@ -342,11 +420,25 @@ class Update:
 
         if detail['code'] == 0 and detail['data']['totalCounts']:
             local_list = detail['data']['list']
+            new_local_list = []
+            is_not_edit = True
             for local in local_list:
-                local['value'] = locales.get(local['locales'], local['value'])
+                if locales.get(local['locales']) != local['value']:
+                    is_not_edit = False
+                new_local_list.append({
+                    **local,
+                    'value': locales.get(local['locales'], local['value'])
+                })
 
-            result = self.__request({'method': 'PUT', 'url': '/lang/', 'params': params,
-                                     'data': json.dumps(local_list).replace('None', 'null')})
+            if is_not_edit:
+                # 没有修改则直接返回旧数据
+                return {
+                    'code': '0',
+                    'data': local_list
+                }
+
+            result = self.__request({'method': 'PUT', 'url': '/link', 'params': params,
+                                     'data': json.dumps(new_local_list).replace('None', 'null')})
 
             if result['code'] == 0 and len(result['data']) and path is not None:
                 # 保存修改翻译数据到 edit.json 文件
@@ -355,9 +447,10 @@ class Update:
         else:
             return {
                 'code': -1,
-                'msg': f'''key: {'_'.join([category, group, key])}，不存在'''
+                'msg': f'''key: {'_'.join([category, group, key]).lower()}，不存在'''
             }
 
+    @block_logout
     def multi_edit(self, multi_data, path=None):
         """
         修改多个翻译
@@ -377,8 +470,9 @@ class Update:
             edit_result = self.edit(data, path)
             edit_key = '_'.join([data.get('category'), data.get('group'), data.get('key')]).lower()
             temp = {}
-            if edit_result['code'] == 0 and len(edit_result['data']):
-                temp[edit_key] = '修改成功'
+            code = edit_result.get('code')
+            if (code == 0 or code == '0') and len(edit_result.get('data')):
+                temp[edit_key] = '修改成功' if code == 0 else '内容相同，未做修改'
                 results['success'].append(temp)
             else:
                 temp[edit_key] = edit_result
@@ -386,6 +480,7 @@ class Update:
 
         return results
 
+    @block_logout
     def delete(self, param=None):
         """
         删除翻译
@@ -401,8 +496,9 @@ class Update:
             'hash_key': param.get('hash_key', '')
         }
 
-        return self.__request({'method': 'DELETE', 'url': '/lang/', 'params': params})
+        return self.__request({'method': 'DELETE', 'url': '/link', 'params': params})
 
+    @block_logout
     def multi_delete(self, multi_data):
         """
         删除多个翻译
@@ -412,24 +508,40 @@ class Update:
         if type(multi_data) != list:
             return None
 
-        results = {}
+        results = {
+            'success': [],
+            'failure': []
+        }
+
         for key in multi_data:
-            results[key] = self.delete({'hash_key': key})
+            res = self.delete({'hash_key': key})
+            res_data = res.get('data') or {}
+            row_deleted = res_data.get('row_deleted')
+            if res.get('code') == 0 and row_deleted > 0:
+                results['success'].append({key: f'删除成功[total: {row_deleted}]'})
+            elif res.get('code') == 0 and row_deleted == 0:
+                results['failure'].append({key: f'不存在，删除失败'})
+            else:
+                results['failure'].append({key: f'''删除失败[res: {res}]'''})
 
         return results
 
-    def sync_cdn(self, category):
+    @block_logout
+    def sync_cdn(self, category_list):
         """
         同步cdn
-        :param category:
+        :param category_list:
         :return:
         """
-        if not category:
+        if not category_list:
             return None
+        result = {}
+        for category in category_list:
+            result[category] = self.__request(
+                {'method': 'POST', 'url': '/link', 'data': f'''{{"category":"{category}"}}'''})
+        return result
 
-        return self.__request(
-            {'method': 'POST', 'url': '/sync_cdn/', 'data': f'''{{"category":"{category}"}}'''})
-
+    @block_logout
     def create_release_tag(self, data):
         """
         创建 release tag
@@ -449,8 +561,9 @@ class Update:
         submit_data = f'''{{"release_category":"{release_category}","release_tag":"{release_tag}","data":""}}'''
 
         return self.__request(
-            {'method': 'POST', 'url': '/release', 'params': params, 'data': submit_data})
+            {'method': 'POST', 'url': '/link', 'params': params, 'data': submit_data})
 
+    @block_logout
     def release_dump(self, release_id):
         """
         同步数据
@@ -462,8 +575,9 @@ class Update:
 
         data = f'''{{"release_id":"{release_id}"}}'''
 
-        return self.__request({'method': 'POST', 'url': '/release_dump', 'data': data})
+        return self.__request({'method': 'POST', 'url': '/link', 'data': data})
 
+    @block_logout
     def refresh_cdn(self, release_id):
         """
         刷新 cdn
@@ -475,8 +589,9 @@ class Update:
 
         data = f'''{{"release_id":"{release_id}"}}'''
 
-        return self.__request({'method': 'POST', 'url': '/refresh_cdn/', 'data': data})
+        return self.__request({'method': 'POST', 'url': '/link', 'data': data})
 
+    @block_logout
     def release(self, data):
         """
         发布新tag
@@ -496,6 +611,7 @@ class Update:
         else:
             return '创建tag失败'
 
+    @block_logout
     def get_release_list(self, param=None):
         """
         获取 release list
@@ -512,4 +628,4 @@ class Update:
             'release_category': param.get('release_category', 'common')
         }
 
-        return self.__request({'method': 'GET', 'url': '/release', 'params': params})
+        return self.__request({'method': 'GET', 'url': '/link', 'params': params})

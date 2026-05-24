@@ -24,11 +24,13 @@ class Monitor(object):
         self.start()
 
     def __init_proxy(self):
-        self.server = Server(self.proxy_path)
+        self.server = Server(self.proxy_path, {'port': 8081})
         self.server.start()
         self.proxy = self.server.create_proxy()
         self.proxy.blacklist(
-            ['*css*', '*jpg*', '*png*', '*gif*', '*baidu*', '*google*'], 200)
+            ["http://.*/.*.css.*", "http://.*/.*.jpg.*", "http://.*/.*.png.*", "http://.*/.*.gif.*",
+             "https://.*/.*.ico.*", '*baidu*', '*google*', 'http://.*/.*disable-devtool.min.js.*'], 404)
+        self.proxy.blacklist('*disable-devtool.min.js', 404)
 
     def __init_webdriver(self):
         chrome_options = webdriver.ChromeOptions()
@@ -45,6 +47,14 @@ class Monitor(object):
             **self.driver_prefs
         })
         self.driver = webdriver.Chrome(executable_path=self.driver_path, options=chrome_options)
+
+        #       self.driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+        #           "source": '''
+        #   Object.defineProperty(navigator, 'webdriver', {
+        #     get: () => undefined
+        #   })
+        # '''
+        #       })
 
     def __create_capture(self, name='monitor', options=None):
         if options is None:
@@ -76,6 +86,7 @@ class Monitor(object):
             self.server.process.terminate()
             self.server.process.wait()
             self.server.process.kill()
+            self.server.stop()
         except OSError:
             pass
 
@@ -113,7 +124,9 @@ def get_play_list(url, xpath=None, selected=False):
 
     for item in play_nodes:
         title = f'''{video_title}-{item.xpath(xpath.get('episode_title'))[0]}'''
-        play_url = f'''{domain}{item.xpath('./@href')[0]}'''
+        href = item.xpath('./@href')[0]
+        play_url = href if re.match(re.compile(r'([a-zA-Z]+://)?[^\s/]*\.[a-zA-Z0-9]+'),
+                                    href) else f'''{domain}{item.xpath('./@href')[0]}'''
         if selected and item.get('class') == 'selected':
             return {title: play_url}
         result[title] = play_url
@@ -132,11 +145,10 @@ def get_m3u8_url(url_list):
     for k, v in url_list.items():
         print('加载页面:', k, v, end='')
         monitor.driver.get(v)
-        time.sleep(1)
+        time.sleep(3)
         logs = monitor.get_log_entries()
         for log in logs:
-            # print(log['request']['url'])
-            if re.match(r'.+m3u8$', log['request']['url']):
+            if re.match(r'.+\.m3u8', log['request']['url']):
                 result[k] = log['request']['url']
         print(' =>', result.get(k, '获取m3u8失败'), '\n')
     return result
@@ -158,7 +170,7 @@ def download_video(url_list, config):
                 file.write('\n')
             title_list = k.split('-')
             file.write(
-                f'''start cmd /k""{config['m3u8dl_path']}" "{v}" --enableDelAfterDone --workDir "{config['work_path']}/{title_list[0]}" --saveName "{title_list[1]}""\n''')
+                f'''start cmd /k""{config['m3u8dl_path']}" "{v}" --enableDelAfterDone --workDir "{config['work_path']}/{title_list[0]}" --saveName "{title_list[0]}-{title_list[1]}""\n''')
             index += 1
     # 执行批处理文件 download_video.bat
     os.system('download_video.bat')
@@ -167,16 +179,17 @@ def download_video(url_list, config):
 if __name__ == '__main__':
     """
     Selenium + Browsermob-Proxy获取浏览器Network请求和响应，从而获取得到m3u8链接
-    需要先安装依赖：requests、browsermob-proxy、selenium
+    需要先安装依赖：requests、browsermobproxy、selenium
     """
     # xpath => video_title：剧集名称、episode_title：集数名称、play：播放列表
     # 获取播放链接
-    play_list = get_play_list('http://dianying.im/paly-61255-1-1/', xpath={
-        'video_title': '//*[@class="video-info-header"]/h1/a/text()',
-        'episode_title': './span/text()',
-        'play': '//*[@id="main"]/div[1]/div/div[3]/div[2]/div/div/a'
+    play_list = get_play_list('http://www.xxxyy.com/vod/99088.html', xpath={
+        'video_title': '/html/body/div[2]/div/div[1]/div/div/div/div[2]/h1/text()',
+        'play': '/html/body/div[2]/div/div[2]/div/div[2]/div/ul/li/a',
+        'episode_title': './text()'
     })
     print('play_list:', play_list, '\n')
+    # exit(0)
 
     if play_list:
         # 初始化 Monitor
@@ -194,26 +207,34 @@ if __name__ == '__main__':
                 '--headless',
                 # 'window-size=1920x1000',
                 'blink-settings=imagesEnabled=false',
-                'disable-infobars',
+                'log-level=2',  # 日志级别 INFO = 0 WARNING = 1 LOG_ERROR = 2 LOG_FATAL = 3 default = 0
+                '--disable-infobars',  # 关闭infobar
                 '--disable-extensions'
-            ]
+            ],
+            # 'driver_prefs': {
+            #     'excludeSwitches': ['enable-logging']
+            # }
         })
 
         # 获取m3u8链接
+        # m3u8_list = {
+        #     'video_title-episode_num': 'https://cdn7.zzz.com:65/20220214/s75ImSU9/705kb/hls/index.m3u8'
+        # }
         m3u8_list = get_m3u8_url(play_list)
+
         print('m3u8_list:', m3u8_list, '\n')
 
         # 关闭 Monitor
         monitor.quit()
-
+        # exit(0)
         if m3u8_list:
             print('开始下载', '\n')
             download_video(m3u8_list, {
                 # N_m3u8DL的存放路径，请自行下载并替换路径
                 # 下载地址：https://github.com/nilaoda/N_m3u8DL-CLI/releases
-                'm3u8dl_path': 'E:/Program Files (x86)/N_m3u8DL/N_m3u8DL-CLI_v2.9.7.exe',
+                'm3u8dl_path': 'E:/Program Files (x86)/N_m3u8DL/N_m3u8DL-CLI_v2.9.9.exe',
                 # 下载保存目录
-                'work_path': 'D:/111222'
+                'work_path': 'E:/videos'
             })
         else:
             print('爬取失败')

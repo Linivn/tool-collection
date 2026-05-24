@@ -1,12 +1,12 @@
-# coding:utf-8
+# -*- coding: utf-8 -*-
 import json
 import logging
 import os
 import re
 import time
-import pyperclip
-
 from functools import reduce
+
+import pyperclip
 from dict_recursive_update import recursive_update
 
 logging.basicConfig(format='%(asctime)s - %(pathname)s[line:%(lineno)d] - %(levelname)s: %(message)s',
@@ -14,18 +14,26 @@ logging.basicConfig(format='%(asctime)s - %(pathname)s[line:%(lineno)d] - %(leve
 logger = logging.log
 
 
-def check_json(input_str):
+def check_json(data):
     """
-    判断是否为json字符串
-    :param input_str:
+    判断是否为json
+    :param data:
     :return:
     """
     try:
-        json.loads(input_str)
-        return True
+        data_type = type(data)
+        if data_type in [str, list, dict]:
+            if data_type is str:
+                json.loads(data)
+            else:
+                json.dumps(data)
+            return True
+        return False
     except BaseException:
         return False
     except TypeError:
+        return False
+    except:
         return False
 
 
@@ -144,9 +152,9 @@ def flatten(data, key=''):
 
     if type(data) is not dict:
         result[key] = data
-    # elif isinstance(data, list):
-    #     for i, item in enumerate(data):
-    #         flatten(item, str(i), get_new_path(path) + key)
+    elif isinstance(data, list):
+        for i, item in enumerate(data):
+            flatten(item, get_new_path([key, str(i)]))
     else:
         for new_key, value in data.items():
             result = {**result, **flatten(value, get_new_path([key, new_key]))}
@@ -207,46 +215,6 @@ def get_differ_dict(dict1, dict2):
         return {}
 
 
-def save_edit_to_file(path, edit_data, local_list):
-    """
-    保存修改翻译数据到 edit.json 文件
-    :param path: edit.json 文件路径
-    :param edit_data: 修改翻译
-    :param local_list: 原始翻译
-    :return:
-    """
-    try:
-        edit_file = open_file(path)
-        category = edit_data.get('category')
-        group = edit_data.get('group')
-        key = edit_data.get('key')
-        locales = edit_data.get('locales')
-        proposer = edit_data.get('proposer', '-')
-
-        # 修改的key不存在时，设置默认值：{}
-        edit_file.setdefault(category, {})
-        edit_file[category].setdefault(group, {})
-        edit_file[category][group].setdefault(key, {})
-
-        edit_item = edit_file[category][group][key] or {}
-        edit_item['proposer'] = proposer
-
-        if not edit_item.get('before'):
-            # 仅保存第一次修改的原始翻译数据
-            edit_item['before'] = {}
-            for lang in locales.keys():
-                for local in local_list:
-                    if lang == local['locales']:
-                        # 仅复制修改翻译数据中语言对应的翻译文字
-                        edit_item['before'][lang] = local['value']
-
-        edit_item['after'] = locales
-        edit_file[category][group][key] = edit_item
-        save_file(edit_file, path)
-    except Exception as e:
-        logger(msg=e, level=logging.ERROR)
-
-
 def get_merge_dict(*dict_args):
     """
     获取嵌套字典合并的结果
@@ -265,6 +233,46 @@ def get_merge_dict(*dict_args):
         return dict1
 
     return deep_search(dict_args[0], dict_args[1])
+
+
+def save_edit_to_file(path, edit_data, local_list):
+    """
+    保存修改翻译数据到 edit.json 文件
+    :param path: edit.json 文件路径
+    :param edit_data: 修改翻译
+    :param local_list: 原始翻译
+    :return:
+    """
+    try:
+        edit_file = open_file(path)
+        category = edit_data.get('category')
+        group = edit_data.get('group')
+        key = edit_data.get('key')
+        locales = edit_data.get('locales')
+        proposer = edit_data.get('proposer')
+
+        # 修改的key不存在时，设置默认值：{}
+        edit_file.setdefault(category, {})
+        edit_file[category].setdefault(group, {})
+        edit_file[category][group].setdefault(key, {})
+
+        edit_item = edit_file[category][group][key] or {}
+        edit_item['proposer'] = proposer or '-'
+
+        if not edit_item.get('before'):
+            # 仅保存第一次修改的原始翻译数据
+            edit_item['before'] = {}
+            for lang in locales.keys():
+                for local in local_list:
+                    if lang == local['locales']:
+                        # 仅复制修改翻译数据中语言对应的翻译文字
+                        edit_item['before'][lang] = local['value']
+
+        edit_item['after'] = locales
+        edit_file[category][group][key] = edit_item
+        save_file(edit_file, path)
+    except Exception as e:
+        logger(msg=e, level=logging.ERROR)
 
 
 def re_search(key_str, search_str):
@@ -295,51 +303,40 @@ def get_edit_table(data=None):
     }
     :return:
     """
-    if data is None:
-        data = {}
+    if not data:
+        return None
 
-    def covert_data(original, result=''):
-        category = original.get('category', 'inte_manager')
-        original_data = original.get('data', original)
-        group = original.get('group', '')
-        languages_map = {
-            'en_us': '英',
-            'zh_cns': '简',
-            'zh_cnt': '繁',
-            'in_id': '印尼',
-            'ja_jp': '日',
-            'ko_kr': '韩',
-            'th_th': '泰',
-            'vi_vn': '越'
-        }
+    result = ''
+    languages_map = {
+        'en_us': '英',
+        'zh_cns': '简',
+        'zh_cnt': '繁',
+        'in_id': '印尼',
+        'ja_jp': '日',
+        'ko_kr': '韩',
+        'th_th': '泰',
+        'vi_vn': '越'
+    }
 
-        for k, v in original_data.items():
-            if 'proposer' in v:
-                before = v.get('before')
-                after = v.get('after')
-                before_text = ''
-                after_text = ''
-                for lang in after.keys():
-                    before_text += f'''{languages_map.get(lang)}：{before.get(lang)}<br/>''' if before.get(
-                        lang) else ''
-                    after_text += f'{languages_map.get(lang)}：{after.get(lang)}<br/>' if after.get(lang) else ''
+    for category, category_value in data.items():
+        for group, group_value in category_value.items():
+            for k, v in group_value.items():
+                if 'after' in v:
+                    before = v.get('before', {})
+                    after = v.get('after')
+                    before_text = ''
+                    after_text = ''
+                    for lang in after.keys():
+                        before_text += f'''{languages_map.get(lang)}：{before.get(lang)}<br/>''' if before.get(
+                            lang) else ''
+                        after_text += f'{languages_map.get(lang)}：{after.get(lang)}<br/>' if after.get(lang) else ''
 
-                result = result + f'''|{'' if re_search(category, result) else category}|{'' if re_search(group, result) else group}|{k}|{before_text}|{after_text}|{v.get('proposer')}|\n'''
-            else:
-                result = covert_data({
-                    'data': v,
-                    'category': category,
-                    'group': k
-                }, result)
+                    result = result + f'''|{'' if re_search(category, result) else category}|{'' if re_search(group, result) else group}|{k}|{before_text}|{after_text}|{v.get('proposer', '')}|\n'''
 
-        if not re.match(re.compile(r'^\|category.'), result):
-            result = f'|category|group|key|修改前|修改后|提出者|\n|---|---|---|---|---|---|\n{result}'
-        return result
-
-    return covert_data({
-        'data': data,
-        'group': ''
-    }, '')
+    result = f'|category|group|key|修改前|修改后|提出者|\n|---|---|---|---|---|---|\n{result}'
+    if '|category|group|key|修改前|修改后|提出者|\n|---|---|---|---|---|---|\n' == result:
+        return None
+    return result.rstrip('\n')
 
 
 def get_add_table(data):
@@ -348,8 +345,13 @@ def get_add_table(data):
     :param data:
     :return:
     """
+    if not data:
+        return None
+
+    if 'en_us' in data:
+        data = data.get('en_us', data)
+
     result = ''
-    data = data.get('en_us', data)
 
     for category, category_value in data.items():
         for group, group_value in category_value.items():
@@ -358,30 +360,33 @@ def get_add_table(data):
                 result += f'''|{'' if re_search(category, result) else category}|{'' if re_search(group, result) else group}|{key}|{hash_key}|\n'''
 
     result = f'|category|group|key|hash_key|\n|---|---|---|---|\n{result}'
-    return result
+    if '|category|group|key|hash_key|\n|---|---|---|---|\n' == result:
+        return None
+    return result.rstrip('\n')
 
 
-def convert_to_add_params(data):
+def convert_add_params(data):
     """
     转换为新增翻译请求参数格式
     :param data:
     :return:
     """
-    # lang_list = ['en_us', 'in_id', 'ja_jp', 'ko_kr', 'th_th', 'vi_vn', 'zh_cns', 'zh_cnt']
+    if not data or type(data) is not dict:
+        return {}
+
     category_locales = data.get('en_us')
-    category_keys = category_locales.keys()
     locales_land_list = data.keys()
     result = {}
 
-    for category in category_keys:
-        group_locales = category_locales[category]
-        for group in group_locales.keys():
-            key_locales = group_locales[group]
+    for category, category_value in category_locales.items():
+        group_locales = category_value
+        for group, group_value in group_locales.items():
+            key_locales = group_value
             for key in key_locales.keys():
-                for land in locales_land_list:
+                for lang in locales_land_list:
                     if not result.get(key):
                         result[key] = []
-                    value = data[land][category][group][key]
+                    value = data[lang][category][group][key]
                     # None: 需要在添加翻译时替换为 null
                     result[key].append({
                         'category': category,
@@ -389,10 +394,37 @@ def convert_to_add_params(data):
                         'value_type': 'string',
                         'appid': '_default',
                         'group': group,
-                        'locales': land,
+                        'locales': lang,
                         'id': None,
                         'value': value if value else None
                     })
+    return result
+
+
+def convert_edit_params(data):
+    """
+    转换为修改翻译请求参数格式
+    :param data:
+    :return:
+    """
+    if not data or type(data) is not dict:
+        return []
+
+    result = []
+
+    for category, category_value in data.items():
+        group_locales = category_value
+        for group, group_value in group_locales.items():
+            key_locales = group_value
+            for key, key_value in key_locales.items():
+                result.append({
+                    'category': category,
+                    'group': group,
+                    'key': key,
+                    'proposer': key_value['proposer'] or '',
+                    'locales': key_value['after'] or {}
+                })
+
     return result
 
 
@@ -407,7 +439,7 @@ def translate_use_time(func):
         start = time.time()
         logger(msg=f'正在翻译，请稍候...', level=logging.INFO)
         result = func(*args, **kw)
-        logger(msg=f'翻译完成，总用时（秒）：{time.time() - start}', level=logging.INFO)
+        logger(msg=f'翻译完成，用时 {round(time.time() - start, 2)} 秒', level=logging.INFO)
         time.sleep(0)
         return result
 

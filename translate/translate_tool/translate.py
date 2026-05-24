@@ -1,5 +1,6 @@
-# coding:utf-8
+# -*- coding: utf-8 -*-
 from googletrans import Translator
+
 from translate_tool.utils import *
 
 
@@ -20,7 +21,11 @@ class Translate:
             'compared': '被对照文名'
         }
         """
-        self.__trans = Translator(service_urls=config.get('service_urls', ['translate.google.com']))
+        self.main_trans = None
+        # 'proxies', 'http://127.0.0.1:10809'
+        self.__trans = Translator(service_urls=config.get('service_urls', ('translate.google.cn',)),
+                                  timeout=config.get('timeout', 15),
+                                  proxies=config.get('proxy', None))
         self.path = config.get('path', './')
         self.languages = config.get('languages', {'en': 'en_us', 'zh-cn': 'zh_cns'})
         self.contrast = config.get('contrast', 'add.json')
@@ -36,8 +41,8 @@ class Translate:
         result = []
         replace_re = re.compile(r'[., ]')
         for i in data:
-            temp = self.google_translate(i).title()
-            # temp = self.google_translate(i)
+            temp = self.__get_translate_text(i).title()
+            # temp = self.__get_translate_text(i)
             temp = replace_re.sub('', temp)
             # temp = temp[0].lower() + temp[1:]
             result.append(temp)
@@ -57,9 +62,25 @@ class Translate:
 
         return result
 
+    def __get_translate_text(self, text, dest='en', src='auto'):
+        """
+        获取翻译文本
+        :param text: 需要翻译的文本
+        :param dest: 目标语言
+        :param src: 源始语言
+        :return:
+        """
+        if dest and (dest == src):
+            return text
+
+        if self.main_trans:
+            return self.main_trans(text, to_lang=dest)
+
+        return (self.__trans.translate(text, dest=dest, src=src)).text
+
     def __tran_list_handler(self, data):
         """
-        翻译list类型的文本集合
+        翻译list类型的文本集合，适用于未确定key的情况，仅翻译不会保存到文件
         :param data: 需要翻译的文本（list）
         :return: 翻译后的结果（dict）
         """
@@ -70,7 +91,7 @@ class Translate:
         for k, v in self.languages.items():
             result[v] = {}
             for i in range(0, list_len):
-                result[v][tran_keys[i]] = self.google_translate(data[i], k)
+                result[v][tran_keys[i]] = self.__get_translate_text(data[i], k)
 
         return result
 
@@ -86,7 +107,7 @@ class Translate:
             more_result = {}
             for k, v in key_data.items():
                 if type(v) is str:
-                    more_result[k] = self.google_translate(v, lang)
+                    more_result[k] = self.__get_translate_text(v, lang)
                 else:
                     more_result[k] = trans_more(v, lang)
 
@@ -114,24 +135,38 @@ class Translate:
 
         return result
 
+    @translate_use_time
     def google_translate(self, text, dest='en', src='auto'):
         """
-        获取翻译文本
+        谷歌翻译
         :param text: 需要翻译的文本
         :param dest: 目标语言
         :param src: 源始语言
         :return:
         """
-        # if dest == 'zh-cn':
-        #     return text
+        return self.__get_translate_text(text, dest=dest, src=src)
 
-        return (self.__trans.translate(text, dest=dest, src=src)).text
+    @translate_use_time
+    def google_multi_translate(self, text, dest=['en'], src='auto'):
+        """
+        谷歌翻译
+        :param text: 需要翻译的文本
+        :param dest: 目标语言
+        :param src: 源始语言
+        :return:
+        """
+        result = {}
+
+        for lang in dest:
+            result[lang] = self.__get_translate_text(text, dest=lang, src=src)
+
+        return result
 
     @translate_use_time
     def list_translate(self, data):
         """
         翻译列表类型的文本，适用于未确定key的情况，仅翻译不会保存到文件
-        :param data: 
+        :param data:
         :return: 
         """
         if type(data) is not list:
@@ -140,7 +175,7 @@ class Translate:
         result = {}
         replace_re = re.compile(r'[., ]')
         for i in data:
-            tran_str = self.google_translate(i)
+            tran_str = self.__get_translate_text(i)
             tran_key = replace_re.sub('', tran_str.title())
             result[tran_key] = {
                 'zh-cn': i,
@@ -149,16 +184,18 @@ class Translate:
 
         return result
 
-    def translate(self, locales=None):
+    def translate(self, locales=None, main_trans=None):
         """
         翻译，支持dict、list类型
         默认不传参，会获取 add.json 的内容进行翻译，并将翻译结果保存到文件中
         如果传参，则仅进行翻译，不会将翻译结果保存到文件中
+        :param main_trans:
         :param locales:
         :return:
         """
         results = {}
         try:
+            self.main_trans = main_trans
             if not locales:
                 # 对比 contrast、compared 差异，仅翻译新增的字段
                 contrast_json = open_file(f'{self.path}/{self.contrast}')
